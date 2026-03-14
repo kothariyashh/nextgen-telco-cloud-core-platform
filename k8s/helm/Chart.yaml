@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ngcmcp-nf
+description: Base Helm chart template for NGCMCP network function deployments
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

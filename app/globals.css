@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #f2f7fb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #e5edf4;
+  --color-ink: #142033;
+  --color-ink-muted: #516077;
+  --color-primary: #0b6c8f;
+  --color-primary-strong: #085676;
+  --color-success: #1e8a52;
+  --color-warning: #b06a0b;
+  --color-danger: #b32d42;
+  --color-border: #cad7e2;
+  --gradient-brand: linear-gradient(135deg, #d8edf5 0%, #e6f0ff 45%, #dff7ec 100%);
+}
+
+@theme inline {
+  --font-sans: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 15% 10%, #ffffff 0%, #f0f7fb 45%, #e9f2f9 100%);
+  color: var(--color-ink);
+  font-family: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.01em;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.container {
+  width: min(1200px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
