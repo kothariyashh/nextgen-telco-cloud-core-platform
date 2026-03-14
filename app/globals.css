@@ -224,6 +224,29 @@ button {
   animation: floatY 8.6s ease-in-out infinite;
 }
 
+.btn-dark-visible {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 6.25rem;
+  border-radius: 0.5rem;
+  background: #0f172a;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff;
+  font-weight: 600;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.btn-dark-visible:hover {
+  background: #1e293b;
+}
+
+.btn-dark-visible:focus-visible {
+  outline: 3px solid rgba(56, 189, 248, 0.5);
+  outline-offset: 2px;
+}
+
 @keyframes riseIn {
   to {
     opacity: 1;

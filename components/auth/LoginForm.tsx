@@ -30,6 +30,9 @@ export function LoginForm({ title = "Email and password" }: Props) {
       if (!response.ok) {
         throw new Error(body?.message ?? "Login failed");
       }
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("ngcmcp_walkthrough_trigger", "1");
+      }
       router.push("/app/dashboard");
       router.refresh();
     } catch (error) {

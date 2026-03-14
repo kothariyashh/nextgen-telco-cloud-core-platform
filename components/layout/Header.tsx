@@ -18,7 +18,7 @@ export function Header() {
           <Link href="/app/settings/profile" className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50">
             Profile
           </Link>
-          <Link href="/api/auth/logout" className="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white">
+          <Link href="/api/auth/logout" className="btn-dark-visible px-3 py-1.5">
             Logout
           </Link>
         </div>

@@ -84,6 +84,14 @@ async function run() {
       console.log("   ✓ Done.\n");
     }
 
+    const fakeSeedPath = path.join(process.cwd(), "supabase", "seed_fake_100.sql");
+    if (fs.existsSync(fakeSeedPath)) {
+      console.log("📄 Running seed_fake_100.sql (100 records per component)...");
+      const fakeSeedSql = fs.readFileSync(fakeSeedPath, "utf8");
+      await client.query(fakeSeedSql);
+      console.log("   ✓ Done.\n");
+    }
+
     console.log("✅ All migrations and seed completed successfully.");
   } catch (err) {
     console.error("❌ Migration failed:", err);

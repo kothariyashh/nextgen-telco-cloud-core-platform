@@ -37,6 +37,9 @@ export function SignupForm({ title = "Create your workspace" }: Props) {
       if (!response.ok) {
         throw new Error(body?.message ?? "Signup failed");
       }
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("ngcmcp_walkthrough_trigger", "1");
+      }
       router.push("/app/dashboard");
       router.refresh();
     } catch (error) {

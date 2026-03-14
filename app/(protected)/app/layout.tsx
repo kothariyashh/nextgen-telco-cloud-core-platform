@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Header } from "@/components/layout/Header";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { NotificationPanel } from "@/components/layout/NotificationPanel";
+import { AppWalkthrough } from "@/components/onboarding/AppWalkthrough";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 
@@ -21,6 +22,7 @@ export default function ProtectedAppLayout({ children }: { children: ReactNode }
           <NotificationPanel />
         </aside>
       </div>
+      <AppWalkthrough />
     </ToastProvider>
   );
 }

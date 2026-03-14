@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ConfidenceBar } from "@/components/ui/ConfidenceBar";
 import { useApi } from "@/hooks/useApi";
 import { getModulePresentation } from "@/lib/module-presentation";
 
@@ -67,11 +68,59 @@ function activityTime(row: Record<string, unknown>) {
   );
 }
 
+function adaptiveGuidance(
+  routePath: string,
+  stats: { total: number; active: number; flagged: number; freshness: number },
+  createHref: string | undefined,
+) {
+  if (stats.flagged > 0) {
+    return {
+      title: "High-priority state detected",
+      summary: `${stats.flagged} flagged records need review before applying automation.`,
+      action: { label: "Open Monitoring Alerts", href: "/app/monitoring/alerts" },
+      confidence: 90,
+      rationale: [
+        "Flagged entities indicate potential service impact.",
+        "Real-time alarm review reduces false-positive automation.",
+        "Human confirmation should precede high-impact actions.",
+      ],
+    };
+  }
+
+  if (stats.total === 0 && createHref) {
+    return {
+      title: "No records yet",
+      summary: "Start with the first guided setup action to unlock personalized recommendations.",
+      action: { label: "Create First Record", href: createHref },
+      confidence: 78,
+      rationale: [
+        "This module has no data records yet.",
+        "Creating baseline entities enables adaptive analytics.",
+        "Subsequent recommendations become behavior-driven after initial setup.",
+      ],
+    };
+  }
+
+  return {
+    title: "System stable and ready",
+    summary: `Data freshness is ${stats.freshness}% and ${stats.active} records are currently healthy.`,
+    action: { label: "Review AI Recommendations", href: "/app/ai" },
+    confidence: 84,
+    rationale: [
+      "Healthy state allows proactive optimization.",
+      "AI recommendations are ranked by operational impact.",
+      "You can override any recommendation before execution.",
+    ],
+  };
+}
+
 export function AppRouteView({ title, description, endpoint, createHref, routePath }: Props) {
   const { data, loading, error } = useApi<unknown>(endpoint ?? "/api");
   const rows = endpoint ? normalizeRows(data) : [];
   const moduleUi = getModulePresentation(routePath);
   const stats = metricsFromRows(rows);
+
+  const guidance = adaptiveGuidance(routePath, stats, createHref);
 
   return (
     <div className="space-y-4">
@@ -129,6 +178,34 @@ export function AppRouteView({ title, description, endpoint, createHref, routePa
         <div className="kpi-tile fade-in-up delay-3">
           <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Data Freshness</p>
           <p className="mt-1 text-2xl font-semibold text-sky-700">{stats.freshness}%</p>
+        </div>
+      </section>
+
+      <section className="surface-card p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">Adaptive Guidance</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">{guidance.title}</h3>
+            <p className="mt-1 text-sm text-slate-600">{guidance.summary}</p>
+          </div>
+          <Link href={guidance.action.href} className="btn-dark-visible px-3 py-1.5 text-sm">
+            {guidance.action.label}
+          </Link>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-[280px_1fr]">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <ConfidenceBar score={guidance.confidence} label="Recommendation confidence" />
+          </div>
+          <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-800">Why this recommendation?</summary>
+            <div className="mt-2 space-y-1 text-sm text-slate-600">
+              {guidance.rationale.map((line) => (
+                <p key={line}>- {line}</p>
+              ))}
+              <p className="pt-1 text-xs text-slate-500">Data provenance: {endpoint ?? "module context"} · records observed: {stats.total}</p>
+            </div>
+          </details>
         </div>
       </section>
 

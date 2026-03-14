@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import { MFASetup } from "@/components/auth/MFASetup";
 import { SSOButton } from "@/components/auth/SSOButton";
 import { AdminScreen } from "@/components/modules/AdminScreen";
+import { AIScreen } from "@/components/modules/AIScreen";
 import { BillingScreen } from "@/components/modules/BillingScreen";
 import { DashboardScreen } from "@/components/modules/DashboardScreen";
 import { MonitoringScreen } from "@/components/modules/MonitoringScreen";
 import { NetworkFunctionsScreen } from "@/components/modules/NetworkFunctionsScreen";
+import { SettingsScreen } from "@/components/modules/SettingsScreen";
 import { SubscribersScreen } from "@/components/modules/SubscribersScreen";
 import { AppRouteView } from "@/components/shared/AppRouteView";
 import { ApiKeyManager } from "@/components/shared/ApiKeyManager";
@@ -61,6 +63,8 @@ export default async function ProtectedRoutePage({ params }: Props) {
     monitoring: section === "monitoring" && isRootSection ? <MonitoringScreen /> : null,
     billing: section === "billing" && isRootSection ? <BillingScreen /> : null,
     admin: section === "admin" && isRootSection ? <AdminScreen /> : null,
+    ai: section === "ai" && isRootSection ? <AIScreen /> : null,
+    settings: section === "settings" && isRootSection ? <SettingsScreen /> : null,
   };
 
   const customScreen =
@@ -69,7 +73,9 @@ export default async function ProtectedRoutePage({ params }: Props) {
     specialScreens.subscribers ??
     specialScreens.monitoring ??
     specialScreens.billing ??
-    specialScreens.admin;
+    specialScreens.admin ??
+    specialScreens.ai ??
+    specialScreens.settings;
 
   return (
     <div className="space-y-4">

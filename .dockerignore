@@ -1,0 +1,42 @@
+# Dependencies (reinstall in container)
+node_modules
+.pnp
+.pnp.*
+
+# Build outputs
+.next
+out
+build
+
+# Development & testing
+coverage
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+.nyc_output
+
+# Scripts (keep migrate-db for CI; exclude test probes)
+scripts/smoke-test.sh
+scripts/e2e-test.sh
+scripts/db-probe*
+scripts/verify-db.ts
+
+# Dev docs & seeds (schema/migrations kept for reference)
+ENV_SETUP.md
+supabase/seed_fake_100.sql
+supabase/.temp
+
+# Git & IDE
+.git
+.gitignore
+.qodo
+.env*
+!.env.example
+
+# Misc
+.DS_Store
+*.log
+*.tsbuildinfo
+README.md

@@ -666,6 +666,7 @@ $$;
 
 -- RLS
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenants_read_own ON public.tenants;
 CREATE POLICY tenants_read_own ON public.tenants FOR SELECT USING (id = public.current_tenant_id());
 
 DO $$
