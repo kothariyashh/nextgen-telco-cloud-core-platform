@@ -24,6 +24,7 @@ const migrationFiles = [
   "202603140001_initial_schema.sql",
   "202603140002_add_session_events_tenant_id.sql",
   "202603140003_add_configurations.sql",
+  "202603140004_gap_completion_core.sql",
 ];
 
 function getConnectionConfig(url: string): Promise<{ connectionString: string }> {
@@ -46,9 +47,9 @@ function getConnectionConfig(url: string): Promise<{ connectionString: string }>
       if (err.code === "ENODATA" || err.code === "ENOTFOUND") {
         throw new Error(
           `Host ${host} has no IPv4 records (IPv6-only). Use the Connection Pooler URL instead:\n` +
-            `  1. Supabase Dashboard → Settings → Database\n` +
-            `  2. Connection string → "Transaction" (port 6543)\n` +
-            `  3. Set DATABASE_URL or DATABASE_URL_POOLER to that URI in .env`
+          `  1. Supabase Dashboard → Settings → Database\n` +
+          `  2. Connection string → "Transaction" (port 6543)\n` +
+          `  3. Set DATABASE_URL or DATABASE_URL_POOLER to that URI in .env`
         );
       }
       throw err;
