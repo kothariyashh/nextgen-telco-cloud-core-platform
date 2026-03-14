@@ -7,7 +7,10 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "db:migrate": "npx tsx scripts/migrate-db.ts"
+    "db:migrate": "npx tsx scripts/migrate-db.ts",
+    "db:seed": "npx tsx scripts/seed-db.ts",
+    "db:setup": "npm run db:migrate && echo '✅ Setup complete'",
+    "db:simulate": "npx tsx scripts/simulate-live-data.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
