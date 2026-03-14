@@ -1,0 +1,55 @@
+<svg width="1200" height="780" viewBox="0 0 1200 780" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1200" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#082F49"/>
+      <stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="780" rx="24" fill="url(#g)"/>
+  <text x="70" y="86" fill="#E2E8F0" font-size="40" font-family="Arial">Cloud-Native Core Architecture</text>
+
+  <g fill="#0F172A" stroke="#22D3EE" stroke-width="2">
+    <rect x="86" y="146" width="184" height="88" rx="12"/>
+    <rect x="308" y="146" width="184" height="88" rx="12"/>
+    <rect x="530" y="146" width="184" height="88" rx="12"/>
+    <rect x="752" y="146" width="184" height="88" rx="12"/>
+    <rect x="974" y="146" width="140" height="88" rx="12"/>
+
+    <rect x="180" y="332" width="184" height="88" rx="12"/>
+    <rect x="402" y="332" width="184" height="88" rx="12"/>
+    <rect x="624" y="332" width="184" height="88" rx="12"/>
+    <rect x="846" y="332" width="184" height="88" rx="12"/>
+
+    <rect x="294" y="530" width="272" height="112" rx="14"/>
+    <rect x="634" y="530" width="272" height="112" rx="14"/>
+  </g>
+
+  <g fill="#BAE6FD" font-size="26" font-family="Arial">
+    <text x="142" y="198">AMF</text>
+    <text x="364" y="198">SMF</text>
+    <text x="586" y="198">UPF</text>
+    <text x="808" y="198">PCF</text>
+    <text x="1010" y="198">UDM</text>
+
+    <text x="236" y="384">AUSF</text>
+    <text x="452" y="384">NRF</text>
+    <text x="678" y="384">NSSF</text>
+    <text x="896" y="384">Billing</text>
+
+    <text x="340" y="598">Observability + AI</text>
+    <text x="694" y="598">Kubernetes + Edge</text>
+  </g>
+
+  <g stroke="#67E8F9" stroke-width="3" opacity="0.75">
+    <path d="M178 234V332"/>
+    <path d="M400 234V332"/>
+    <path d="M622 234V332"/>
+    <path d="M844 234V332"/>
+    <path d="M1032 234V332"/>
+    <path d="M272 376H308"/>
+    <path d="M494 376H530"/>
+    <path d="M716 376H752"/>
+    <path d="M364 420L430 530"/>
+    <path d="M808 420L742 530"/>
+  </g>
+</svg>

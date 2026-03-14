@@ -16,7 +16,7 @@ export function DataTable<T extends Record<string, any>>({ columns, rows }: Prop
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+        <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500">
           <tr>
             {columns.map((column) => (
               <th key={String(column.key)} className="px-4 py-3 font-semibold">
@@ -28,7 +28,7 @@ export function DataTable<T extends Record<string, any>>({ columns, rows }: Prop
         <tbody>
           {rows.length ? (
             rows.map((row, index) => (
-              <tr key={row.id ?? index} className="border-t border-slate-100">
+              <tr key={row.id ?? index} className="border-t border-slate-100 odd:bg-white even:bg-slate-50/40">
                 {columns.map((column) => (
                   <td key={`${row.id ?? index}-${String(column.key)}`} className="px-4 py-3 text-slate-700">
                     {column.render ? column.render(row) : (row as any)[column.key] ?? "-"}

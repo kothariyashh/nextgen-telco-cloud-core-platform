@@ -1,15 +1,19 @@
+import { AuthShell } from "@/components/auth/AuthShell";
 import { LoginForm } from "@/components/auth/LoginForm";
 
 export default function LoginPage() {
   return (
-    <main className="container py-12">
-      <div className="mx-auto max-w-lg rounded-3xl border border-slate-200 bg-white p-8">
-        <h1 className="text-3xl font-semibold text-slate-900">Log In</h1>
-        <p className="mt-2 text-sm text-slate-600">Access your NGCMCP control plane.</p>
-        <div className="mt-6">
-          <LoginForm title="Email and password" />
-        </div>
-      </div>
-    </main>
+    <AuthShell
+      title="Log In"
+      description="Access your NGCMCP control plane and continue live operations."
+      sideTitle="Secure Access Layer"
+      sidePoints={[
+        "Tenant-isolated session management",
+        "Role-based controls for engineering and billing",
+        "MFA and SSO-ready authentication flow",
+      ]}
+    >
+      <LoginForm title="Email and password" />
+    </AuthShell>
   );
 }

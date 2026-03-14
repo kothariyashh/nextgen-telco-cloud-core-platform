@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 import { MFASetup } from "@/components/auth/MFASetup";
 import { SSOButton } from "@/components/auth/SSOButton";
+import { AdminScreen } from "@/components/modules/AdminScreen";
+import { BillingScreen } from "@/components/modules/BillingScreen";
+import { DashboardScreen } from "@/components/modules/DashboardScreen";
+import { MonitoringScreen } from "@/components/modules/MonitoringScreen";
+import { NetworkFunctionsScreen } from "@/components/modules/NetworkFunctionsScreen";
+import { SubscribersScreen } from "@/components/modules/SubscribersScreen";
 import { AppRouteView } from "@/components/shared/AppRouteView";
 import { ApiKeyManager } from "@/components/shared/ApiKeyManager";
 import { BillingExportPanel } from "@/components/shared/BillingExportPanel";
@@ -42,12 +48,32 @@ export default async function ProtectedRoutePage({ params }: Props) {
     redirect("/app/dashboard");
   }
 
+  const section = slug[0];
+  const isRootSection = slug.length === 1;
+
   const { meta, fullPath } = resolveMeta(slug);
   const endpoint = resolveEndpoint(meta.endpoint, slug);
 
+  const specialScreens = {
+    dashboard: section === "dashboard" && isRootSection ? <DashboardScreen /> : null,
+    networkFunctions: section === "network-functions" && isRootSection ? <NetworkFunctionsScreen /> : null,
+    subscribers: section === "subscribers" && isRootSection ? <SubscribersScreen /> : null,
+    monitoring: section === "monitoring" && isRootSection ? <MonitoringScreen /> : null,
+    billing: section === "billing" && isRootSection ? <BillingScreen /> : null,
+    admin: section === "admin" && isRootSection ? <AdminScreen /> : null,
+  };
+
+  const customScreen =
+    specialScreens.dashboard ??
+    specialScreens.networkFunctions ??
+    specialScreens.subscribers ??
+    specialScreens.monitoring ??
+    specialScreens.billing ??
+    specialScreens.admin;
+
   return (
     <div className="space-y-4">
-      <AppRouteView title={meta.title} description={meta.description} endpoint={endpoint} createHref={meta.createHref} />
+      {customScreen ?? <AppRouteView title={meta.title} description={meta.description} endpoint={endpoint} createHref={meta.createHref} routePath={fullPath} />}
 
       {fullPath === "/app/ai/intent" ? <IntentConsole /> : null}
       {fullPath === "/app/settings/api-keys" ? <ApiKeyManager /> : null}

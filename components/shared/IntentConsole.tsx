@@ -24,13 +24,14 @@ export function IntentConsole() {
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Intent-Based Networking</h3>
+    <section className="surface-card p-4">
+      <h3 className="text-base font-semibold text-slate-900">Intent-Based Networking Console</h3>
+      <p className="mt-1 text-sm text-slate-600">Write natural language commands and preview validated orchestration actions.</p>
       <form onSubmit={onSubmit} className="mt-3 space-y-3">
         <textarea
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          className="min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
         />
         <button disabled={loading} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
           {loading ? "Parsing..." : "Run Intent"}

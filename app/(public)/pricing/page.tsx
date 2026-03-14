@@ -4,15 +4,17 @@ export default function PricingPage() {
   return (
     <PublicSectionPage
       title="Pricing"
-      description="Simple operator-focused pricing tiers with subscriber-based growth paths."
+      description="Operator-focused tiers with predictable capacity planning and expansion-ready controls."
       bullets={[
-        "Starter: Up to 10K subscribers, 10 network functions, 5 slices",
-        "Growth: Up to 100K subscribers, 50 network functions, 25 slices",
-        "Enterprise: Unlimited scale with dedicated support",
-        "Usage-based add-ons for advanced analytics and AI automation",
+        "Starter: 10K subscribers, 10 network functions, 5 slices",
+        "Growth: 100K subscribers, 50 network functions, 25 slices",
+        "Enterprise: Unlimited scale, dedicated support, custom success plan",
+        "Usage add-ons for AI, advanced compliance workflows, and premium observability retention",
       ]}
       ctaLabel="Talk to Sales"
       ctaHref="/contact"
+      imageSrc="/visuals/module-console.svg"
+      imageAlt="Billing and pricing console"
     />
   );
 }

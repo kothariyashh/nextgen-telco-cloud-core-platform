@@ -1,18 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --color-bg: #f2f7fb;
+  --color-bg: #f3f8fb;
   --color-surface: #ffffff;
-  --color-surface-muted: #e5edf4;
-  --color-ink: #142033;
-  --color-ink-muted: #516077;
-  --color-primary: #0b6c8f;
-  --color-primary-strong: #085676;
-  --color-success: #1e8a52;
-  --color-warning: #b06a0b;
-  --color-danger: #b32d42;
-  --color-border: #cad7e2;
-  --gradient-brand: linear-gradient(135deg, #d8edf5 0%, #e6f0ff 45%, #dff7ec 100%);
+  --color-surface-muted: #eef4f8;
+  --color-ink: #0f172a;
+  --color-ink-muted: #4b5563;
+  --color-border: #d5e0e8;
+  --color-primary: #0f766e;
+  --color-primary-strong: #0c4a6e;
+  --color-secondary: #1d4ed8;
+  --gradient-brand: linear-gradient(140deg, #cffafe 0%, #e0f2fe 40%, #dcfce7 100%);
+  --gradient-dark: linear-gradient(145deg, #082f49 0%, #0f172a 50%, #1e3a8a 100%);
 }
 
 @theme inline {
@@ -27,14 +26,38 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at 15% 10%, #ffffff 0%, #f0f7fb 45%, #e9f2f9 100%);
+  background:
+    radial-gradient(circle at 10% 10%, #ffffff 0%, #eef7fb 40%, rgba(231, 244, 253, 0.75) 100%),
+    linear-gradient(140deg, #f8fafc 0%, #ecf7ff 45%, #e6f6ee 100%);
   color: var(--color-ink);
   font-family: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+::selection {
+  background: rgba(14, 116, 144, 0.18);
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 1000;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus-visible {
+  top: 0.85rem;
 }
 
 h1,
@@ -43,7 +66,7 @@ h3,
 h4,
 h5,
 h6 {
-  letter-spacing: -0.01em;
+  letter-spacing: -0.016em;
 }
 
 input,
@@ -53,22 +76,218 @@ button {
   font: inherit;
 }
 
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid rgba(14, 116, 144, 0.45);
+  outline-offset: 2px;
+}
+
 .container {
-  width: min(1200px, calc(100% - 2rem));
+  width: min(1220px, calc(100% - 2rem));
   margin: 0 auto;
 }
 
 .panel {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
-  border-radius: 14px;
+  border-radius: 16px;
+}
+
+.surface-card {
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+  border-radius: 16px;
+  box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.45);
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.44);
+  background: rgba(255, 255, 255, 0.19);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+}
+
+.mesh-bg {
+  background-image:
+    linear-gradient(rgba(12, 74, 110, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(12, 74, 110, 0.1) 1px, transparent 1px),
+    var(--gradient-brand);
+  background-size: 36px 36px, 36px 36px, cover;
+}
+
+.dark-mesh {
+  background-image:
+    linear-gradient(rgba(103, 232, 249, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.1) 1px, transparent 1px),
+    var(--gradient-dark);
+  background-size: 30px 30px, 30px 30px, cover;
+}
+
+.glow-ring {
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.32),
+    0 18px 36px -28px rgba(14, 116, 144, 0.65);
+}
+
+.lift-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.lift-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 44px -30px rgba(15, 23, 42, 0.52);
+  border-color: rgba(14, 116, 144, 0.45);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 0.3rem;
   border-radius: 999px;
-  padding: 0.2rem 0.55rem;
+  padding: 0.22rem 0.62rem;
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+.kpi-tile {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(240, 249, 255, 0.88));
+  padding: 0.9rem;
+}
+
+.image-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 20px 48px -36px rgba(15, 23, 42, 0.7);
+}
+
+.image-frame::after {
+  content: "";
+  position: absolute;
+  inset: -60% auto auto -30%;
+  width: 45%;
+  height: 220%;
+  transform: rotate(16deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.17), transparent);
+  animation: shimmerSweep 6.5s linear infinite;
+}
+
+.pulse-dot {
+  position: relative;
+}
+
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 999px;
+  border: 2px solid rgba(56, 189, 248, 0.5);
+  animation: pulseRing 1.8s ease-out infinite;
+}
+
+.marquee-track {
+  display: flex;
+  gap: 0.9rem;
+  width: max-content;
+  animation: marquee 22s linear infinite;
+}
+
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: riseIn 0.66s ease forwards;
+}
+
+.delay-1 {
+  animation-delay: 0.08s;
+}
+
+.delay-2 {
+  animation-delay: 0.16s;
+}
+
+.delay-3 {
+  animation-delay: 0.24s;
+}
+
+.delay-4 {
+  animation-delay: 0.32s;
+}
+
+.float-y {
+  animation: floatY 5.4s ease-in-out infinite;
+}
+
+.float-y-slow {
+  animation: floatY 8.6s ease-in-out infinite;
+}
+
+@keyframes riseIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatY {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmerSweep {
+  from {
+    transform: translateX(-160%) rotate(16deg);
+  }
+  to {
+    transform: translateX(420%) rotate(16deg);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 920px) {
+  .marquee-track {
+    animation-duration: 28s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .image-frame::after {
+    display: none;
+  }
 }

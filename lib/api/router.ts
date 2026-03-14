@@ -49,6 +49,7 @@ const tenantScopedTables = new Set([
   "compliance_reports",
   "regulatory_logs",
   "user_invites",
+  "configurations",
 ]);
 
 const roleWeights: Record<Role, number> = {
@@ -1906,6 +1907,272 @@ async function handleCompliance(path: string[], method: string, request: NextReq
   return null;
 }
 
+async function handleAnalytics(path: string[], method: string, request: NextRequest) {
+  if (path[0] !== "analytics") return null;
+
+  const built = await buildContext(request);
+  if ("error" in built) return built.error;
+  const { ctx } = built;
+
+  if (method !== "GET") return null;
+
+  const section = path[1];
+  const id = path[2];
+
+  if (!section) {
+    const [subs, sessions, nfs, slices, metrics, cdr] = await Promise.all([
+      ctx.admin.from("subscribers").select("id,status,plan", { count: "exact", head: true }).eq("tenant_id", ctx.tenantId),
+      ctx.admin.from("sessions").select("id,status,bytes_uplink,bytes_downlink", { count: "exact" }).eq("tenant_id", ctx.tenantId),
+      ctx.admin.from("network_functions").select("id,status,nf_type", { count: "exact" }).eq("tenant_id", ctx.tenantId),
+      ctx.admin.from("network_slices").select("id,status,slice_type", { count: "exact" }).eq("tenant_id", ctx.tenantId),
+      ctx.admin.from("performance_metrics").select("metric_name,metric_value,recorded_at").eq("tenant_id", ctx.tenantId).order("recorded_at", { ascending: false }).limit(100),
+      ctx.admin.from("cdr_records").select("id", { count: "exact", head: true }).eq("tenant_id", ctx.tenantId),
+    ]);
+
+    const sessionData = sessions.data ?? [];
+    const totalBytes = sessionData.reduce((sum: number, s: any) => sum + (Number(s.bytes_uplink) || 0) + (Number(s.bytes_downlink) || 0), 0);
+    const activeSessions = sessionData.filter((s: any) => s.status === "active").length;
+
+    return ok({
+      overview: {
+        subscribers: { total: subs.count ?? 0 },
+        sessions: { total: sessions.count ?? 0, active: activeSessions, total_bytes: totalBytes },
+        network_functions: { total: nfs.count ?? 0 },
+        slices: { total: slices.count ?? 0 },
+        billing: { cdr_records: cdr.count ?? 0 },
+      },
+      latest_metrics: metrics.data ?? [],
+      generated_at: nowIso(),
+    });
+  }
+
+  if (section === "usage" && !id) {
+    const { data } = await ctx.admin
+      .from("cdr_records")
+      .select("duration_seconds,bytes_uplink,bytes_downlink,charge_amount")
+      .eq("tenant_id", ctx.tenantId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const totalDuration = (data ?? []).reduce((s, r) => s + (Number(r.duration_seconds) || 0), 0);
+    const totalBytes = (data ?? []).reduce((s, r) => s + (Number(r.bytes_uplink) || 0) + (Number(r.bytes_downlink) || 0), 0);
+    const totalRevenue = (data ?? []).reduce((s, r) => s + (Number(r.charge_amount) || 0), 0);
+
+    return ok({
+      usage: { total_duration_seconds: totalDuration, total_bytes: totalBytes, total_revenue: totalRevenue },
+      records_count: data?.length ?? 0,
+      generated_at: nowIso(),
+    });
+  }
+
+  if (section === "subscribers" && !id) {
+    return listTable(ctx, "subscribers", request, { orderBy: "created_at", select: "id,imsi,msisdn,status,plan,created_at" });
+  }
+
+  return null;
+}
+
+async function handleConfigurations(path: string[], method: string, request: NextRequest) {
+  if (path[0] !== "configurations") return null;
+
+  const built = await buildContext(request);
+  if ("error" in built) return built.error;
+  const { ctx } = built;
+
+  const id = path[1];
+  const action = path[2];
+
+  if (!id && method === "GET") {
+    return listTable(ctx, "configurations", request, {
+      orderBy: "updated_at",
+      searchField: "name",
+    });
+  }
+
+  if (!id && method === "POST") {
+    const schema = z.object({
+      name: z.string().min(2),
+      scope: z.string().default("platform"),
+      scope_id: z.string().uuid().optional(),
+      config: z.record(z.string(), z.any()).default({}),
+      description: z.string().optional(),
+    });
+    const parsed = schema.safeParse(await parseBody(request, {}));
+    if (!parsed.success) {
+      return fail("Invalid configuration payload.", 400, "validation_error", parsed.error.flatten());
+    }
+    return insertOne(ctx, "configurations", {
+      ...parsed.data,
+      scope_id: parsed.data.scope_id ?? null,
+      version: 1,
+    });
+  }
+
+  if (id && !action) {
+    if (method === "GET") return getById(ctx, "configurations", id);
+    if (method === "PUT") {
+      const schema = z.object({
+        config: z.record(z.string(), z.any()).optional(),
+        description: z.string().optional(),
+      });
+      const parsed = schema.safeParse(await parseBody(request, {}));
+      if (!parsed.success) {
+        return fail("Invalid configuration update payload.", 400, "validation_error", parsed.error.flatten());
+      }
+      const { data: existing } = await ctx.admin.from("configurations").select("version,id").eq("id", id).eq("tenant_id", ctx.tenantId).maybeSingle();
+      if (!existing) return fail("Configuration not found.", 404, "not_found");
+
+      const update: Record<string, unknown> = { ...parsed.data };
+      if (update.config) update.version = (existing.version ?? 1) + 1;
+      return updateById(ctx, "configurations", id, update);
+    }
+    if (method === "DELETE") {
+      let query: any = ctx.admin.from("configurations").delete().eq("id", id);
+      query = withTenant(query, "configurations", ctx.tenantId);
+      const { error } = await query;
+      if (error) return fail("Failed to delete configuration.", 500, "config_delete_error", error.message);
+      return ok({ deleted: true });
+    }
+  }
+
+  if (id && action === "rollback" && method === "POST") {
+    const { data: current } = await ctx.admin.from("configurations").select("previous_version_id,config").eq("id", id).eq("tenant_id", ctx.tenantId).maybeSingle();
+    if (!current || !current.previous_version_id) return fail("No previous version to rollback to.", 404, "no_rollback");
+    const { data: prev } = await ctx.admin.from("configurations").select("config").eq("id", current.previous_version_id).maybeSingle();
+    if (!prev) return fail("Previous version not found.", 404, "not_found");
+    return updateById(ctx, "configurations", id, { config: prev.config });
+  }
+
+  return null;
+}
+
+async function handleDeployments(path: string[], method: string, request: NextRequest) {
+  if (path[0] !== "deployments") return null;
+
+  const built = await buildContext(request);
+  if ("error" in built) return built.error;
+  const { ctx } = built;
+
+  const id = path[1];
+  const action = path[2];
+
+  if (!id && method === "GET") {
+    return listTable(ctx, "orchestration_jobs", request, {
+      orderBy: "created_at",
+      extraFilters: [{ column: "job_type", value: "deploy" }],
+    });
+  }
+
+  if (id && !action && method === "GET") {
+    return getById(ctx, "orchestration_jobs", id);
+  }
+
+  if (!id && method === "POST") {
+    const payload = await parseBody<Record<string, unknown>>(request, {});
+    return createOrchestrationJob(ctx, "deploy", payload);
+  }
+
+  if (id && action === "status" && method === "GET") {
+    const res = await getById(ctx, "orchestration_jobs", id);
+    const body = await res.json();
+    if (!body.ok) return res;
+    return ok({ status: body.data?.status, result: body.data?.result, completed_at: body.data?.completed_at });
+  }
+
+  return null;
+}
+
+async function handleEdge(path: string[], method: string, request: NextRequest) {
+  if (path[0] !== "edge") return null;
+
+  const built = await buildContext(request);
+  if ("error" in built) return built.error;
+  const { ctx } = built;
+
+  const section = path[1];
+  const id = path[2];
+  const sub = path[3];
+
+  if (section === "clusters") {
+    if (!id && method === "GET") {
+      return listTable(ctx, "edge_clusters", request, { orderBy: "name", searchField: "name" });
+    }
+    if (!id && method === "POST") {
+      const schema = z.object({
+        name: z.string().min(2),
+        region_id: z.string().uuid().optional(),
+        kubernetes_version: z.string().optional(),
+        node_count: z.number().int().min(0).default(0),
+      });
+      const parsed = schema.safeParse(await parseBody(request, {}));
+      if (!parsed.success) {
+        return fail("Invalid edge cluster payload.", 400, "validation_error", parsed.error.flatten());
+      }
+      return insertOne(ctx, "edge_clusters", {
+        ...parsed.data,
+        region_id: parsed.data.region_id ?? null,
+        status: "provisioning",
+      });
+    }
+    if (id && !sub) {
+      if (method === "GET") return getById(ctx, "edge_clusters", id);
+      if (method === "PUT") return updateById(ctx, "edge_clusters", id, await parseBody(request, {}));
+      if (method === "DELETE") {
+        let query: any = ctx.admin.from("edge_clusters").delete().eq("id", id);
+        query = withTenant(query, "edge_clusters", ctx.tenantId);
+        const { error } = await query;
+        if (error) return fail("Failed to delete edge cluster.", 500, "edge_delete_error", error.message);
+        return ok({ deleted: true });
+      }
+    }
+    if (id && sub === "nodes" && method === "GET") {
+      const { data, error } = await ctx.admin
+        .from("edge_nodes")
+        .select("*")
+        .eq("cluster_id", id)
+        .eq("tenant_id", ctx.tenantId)
+        .order("hostname");
+
+      if (error) return fail("Failed to list edge nodes.", 500, "edge_nodes_error", error.message);
+      return ok({ items: data ?? [] });
+    }
+    if (id && sub === "nodes" && method === "POST") {
+      const schema = z.object({
+        hostname: z.string().min(1),
+        ip_address: z.string().optional(),
+        cpu_cores: z.number().int().min(0).optional(),
+        memory_gb: z.number().min(0).optional(),
+      });
+      const parsed = schema.safeParse(await parseBody(request, {}));
+      if (!parsed.success) {
+        return fail("Invalid edge node payload.", 400, "validation_error", parsed.error.flatten());
+      }
+      return insertOne(ctx, "edge_nodes", {
+        ...parsed.data,
+        cluster_id: id,
+        status: "provisioning",
+      });
+    }
+  }
+
+  if (section === "nodes") {
+    if (!id && method === "GET") {
+      return listTable(ctx, "edge_nodes", request, { orderBy: "hostname", searchField: "hostname" });
+    }
+    if (id && method === "GET") return getById(ctx, "edge_nodes", id);
+    if (id && method === "PUT") return updateById(ctx, "edge_nodes", id, await parseBody(request, {}));
+    if (id && method === "DELETE") {
+      let query: any = ctx.admin.from("edge_nodes").delete().eq("id", id);
+      query = withTenant(query, "edge_nodes", ctx.tenantId);
+      const { error } = await query;
+      if (error) return fail("Failed to delete edge node.", 500, "edge_node_delete_error", error.message);
+      return ok({ deleted: true });
+    }
+  }
+
+  return null;
+}
+
 async function handleAdmin(path: string[], method: string, request: NextRequest) {
   if (path[0] !== "admin") return null;
 
@@ -2091,6 +2358,10 @@ export async function handleApiRoute(request: NextRequest, segments: string[], m
     handleAI,
     handleMarketplace,
     handleCompliance,
+    handleAnalytics,
+    handleConfigurations,
+    handleDeployments,
+    handleEdge,
     handleAdmin,
   ];
 

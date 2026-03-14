@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "npx tsx scripts/migrate-db.ts",
-    "db:verify": "npx tsx scripts/verify-db.ts"
+    "db:verify": "npx tsx scripts/verify-db.ts",
+    "smoke-test": "bash scripts/smoke-test.sh",
+    "e2e-test": "bash scripts/e2e-test.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
@@ -23,6 +25,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.18.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

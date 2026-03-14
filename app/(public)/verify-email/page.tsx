@@ -1,10 +1,17 @@
+import { PublicSectionPage } from "@/components/shared/PublicSectionPage";
+
 export default function VerifyEmailPage() {
   return (
-    <main className="container py-12">
-      <div className="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center">
-        <h1 className="text-3xl font-semibold text-slate-900">Verify Your Email</h1>
-        <p className="mt-3 text-slate-600">Check your inbox for the verification link to activate your account.</p>
-      </div>
-    </main>
+    <PublicSectionPage
+      title="Verify Your Email"
+      description="A verification link has been sent to your inbox. Once confirmed, your tenant environment will be activated."
+      bullets={[
+        "Check inbox and spam folders",
+        "Click the secure verification link",
+        "Return to login and access dashboard",
+      ]}
+      imageSrc="/visuals/module-console.svg"
+      imageAlt="Email verification visual"
+    />
   );
 }
