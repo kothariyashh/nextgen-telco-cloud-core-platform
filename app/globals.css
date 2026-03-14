@@ -37,7 +37,7 @@ body {
   background: rgba(14, 116, 144, 0.18);
 }
 
-a {
+:where(a) {
   color: inherit;
   text-decoration: none;
 }

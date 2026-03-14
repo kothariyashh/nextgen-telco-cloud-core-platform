@@ -17,39 +17,65 @@ const tenantScopedTables = new Set([
   "sim_cards",
   "subscriber_devices",
   "roaming_profiles",
+  "imsi_records",
+  "imei_devices",
   "network_slices",
   "slice_templates",
   "slice_assignments",
+  "sla_agreements",
   "sessions",
   "session_events",
+  "session_qos",
   "policy_rules",
   "qos_profiles",
+  "traffic_policies",
   "charging_sessions",
   "credit_balances",
   "cdr_records",
+  "billing_exports",
+  "billing_invoices",
+  "billing_invoice_items",
   "performance_metrics",
+  "metrics_stream",
   "alerts",
   "alarms",
   "incidents",
   "edge_clusters",
   "edge_nodes",
+  "edge_workloads",
   "audit_logs",
   "logs",
   "traces",
   "trace_spans",
   "gdpr_requests",
+  "data_access_logs",
+  "training_datasets",
   "model_registry",
+  "model_deployments",
+  "model_metrics",
   "anomaly_alerts",
   "ai_predictions",
   "optimization_recommendations",
+  "ztp_workflows",
   "orchestration_jobs",
   "security_policies",
   "threat_alerts",
   "marketplace_installs",
+  "package_installs",
   "compliance_reports",
   "regulatory_logs",
   "user_invites",
   "configurations",
+  "mfa_devices",
+  "login_attempts",
+  "device_sessions",
+  "service_accounts",
+  "topology_regions",
+  "topology_data_centers",
+  "topology_links",
+  "data_centers",
+  "availability_zones",
+  "network_links",
 ]);
 
 const roleWeights: Record<Role, number> = {
@@ -67,7 +93,16 @@ type RequestContext = {
   userId: string | null;
   email: string | null;
   tenantId: string | null;
+  tenant: {
+    id: string;
+    is_active: boolean | null;
+    max_subscribers: number | null;
+    max_network_functions: number | null;
+    plan: string | null;
+  } | null;
   role: Role;
+  authType: "user" | "api_key" | "anonymous";
+  apiKeyScopes: string[];
 };
 
 function ok(data: unknown, status = 200, message?: string) {
@@ -132,6 +167,26 @@ function toCsv(rows: Array<Record<string, unknown>>) {
   return lines.join("\n");
 }
 
+function parseBearerToken(value: string | null) {
+  if (!value) return null;
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+}
+
+function scopeForRequest(pathname: string, method: string) {
+  const segment = pathname.replace(/^\/api\/?/, "").split("/")[0] || "api";
+  const action = method === "GET" || method === "HEAD" ? "read" : "write";
+  return `${segment}:${action}`;
+}
+
+function hasApiScope(scopes: string[], requiredScope: string) {
+  if (!scopes.length) return false;
+  if (scopes.includes("*")) return true;
+
+  const [domain, action] = requiredScope.split(":");
+  return scopes.includes(requiredScope) || scopes.includes(`${domain}:*`) || scopes.includes(`*:${action}`);
+}
+
 async function buildContext(request: NextRequest, opts?: { allowAnonymous?: boolean }) {
   if (!hasSupabaseEnv()) {
     return { error: fail("Supabase environment variables are missing.", 500, "env_missing") };
@@ -140,18 +195,25 @@ async function buildContext(request: NextRequest, opts?: { allowAnonymous?: bool
   const allowAnonymous = Boolean(opts?.allowAnonymous);
   const admin = createSupabaseAdminClient();
   const server = await createSupabaseServerClient();
+
+  const authHeader = request.headers.get("authorization");
+  const rawApiKey = request.headers.get("x-api-key") ?? parseBearerToken(authHeader);
+
   const {
     data: { user },
     error: userError,
   } = await server.auth.getUser();
 
-  if (userError && !allowAnonymous) {
+  if (userError && !allowAnonymous && !rawApiKey) {
     return { error: fail("Unable to resolve current session.", 401, "session_error", userError.message) };
   }
 
-  const userId = user?.id ?? null;
+  let userId = user?.id ?? null;
+  let email = user?.email ?? null;
   let tenantId: string | null = null;
   let role: Role = "readonly_viewer";
+  let authType: RequestContext["authType"] = user ? "user" : "anonymous";
+  let apiKeyScopes: string[] = [];
 
   if (userId) {
     const { data: profile } = await admin
@@ -162,13 +224,35 @@ async function buildContext(request: NextRequest, opts?: { allowAnonymous?: bool
 
     tenantId = profile?.tenant_id ?? null;
     role = (profile?.role as Role | null) ?? "readonly_viewer";
+  } else if (rawApiKey) {
+    const keyHash = crypto.createHash("sha256").update(rawApiKey).digest("hex");
+    const { data: keyRow, error: keyError } = await admin
+      .from("api_keys")
+      .select("tenant_id, user_id, scopes, is_active, expires_at")
+      .eq("key_hash", keyHash)
+      .maybeSingle();
+
+    if (keyError) {
+      return { error: fail("Unable to validate API key.", 401, "api_key_error", keyError.message) };
+    }
+
+    const expired = Boolean(keyRow?.expires_at && new Date(keyRow.expires_at).getTime() <= Date.now());
+    if (!keyRow || !keyRow.is_active || expired) {
+      return { error: fail("Invalid or expired API key.", 401, "api_key_invalid") };
+    }
+
+    tenantId = keyRow.tenant_id ?? null;
+    userId = keyRow.user_id ?? null;
+    role = "api_service";
+    authType = "api_key";
+    apiKeyScopes = Array.isArray(keyRow.scopes) ? (keyRow.scopes as string[]) : [];
   }
 
   if (!tenantId) {
     tenantId = request.headers.get("x-tenant-id") ?? getDefaultTenantId();
   }
 
-  if (!allowAnonymous && !userId) {
+  if (!allowAnonymous && authType === "anonymous") {
     return { error: fail("Authentication required.", 401, "unauthorized") };
   }
 
@@ -176,16 +260,115 @@ async function buildContext(request: NextRequest, opts?: { allowAnonymous?: bool
     return { error: fail("Tenant context missing.", 400, "tenant_missing") };
   }
 
+  let tenant: RequestContext["tenant"] = null;
+  if (tenantId) {
+    const { data: tenantRow, error: tenantError } = await admin
+      .from("tenants")
+      .select("id, is_active, max_subscribers, max_network_functions, plan")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (tenantError) {
+      return { error: fail("Unable to resolve tenant context.", 500, "tenant_context_error", tenantError.message) };
+    }
+
+    tenant = tenantRow
+      ? {
+          id: tenantRow.id,
+          is_active: tenantRow.is_active,
+          max_subscribers: tenantRow.max_subscribers,
+          max_network_functions: tenantRow.max_network_functions,
+          plan: tenantRow.plan,
+        }
+      : null;
+
+    if (!allowAnonymous && tenant && tenant.is_active === false && role !== "super_admin") {
+      return { error: fail("Tenant is suspended. Contact support.", 403, "tenant_suspended") };
+    }
+  }
+
+  if (authType === "api_key") {
+    const requiredScope = scopeForRequest(request.nextUrl.pathname, request.method);
+    if (!hasApiScope(apiKeyScopes, requiredScope)) {
+      return {
+        error: fail(
+          `API key missing required scope '${requiredScope}'.`,
+          403,
+          "scope_forbidden",
+          { required_scope: requiredScope, available_scopes: apiKeyScopes },
+        ),
+      };
+    }
+  }
+
   return {
     ctx: {
       admin,
       server,
       userId,
-      email: user?.email ?? null,
+      email,
       tenantId,
+      tenant,
       role,
+      authType,
+      apiKeyScopes,
     } satisfies RequestContext,
   };
+}
+
+async function enforceTenantPlanLimit(ctx: RequestContext, resource: "subscribers" | "network_functions") {
+  if (!ctx.tenantId || !ctx.tenant || ctx.role === "super_admin") {
+    return null;
+  }
+
+  if (ctx.tenant.is_active === false) {
+    return fail("Tenant is suspended and cannot create new resources.", 403, "tenant_suspended");
+  }
+
+  const limit = resource === "subscribers" ? ctx.tenant.max_subscribers : ctx.tenant.max_network_functions;
+  if (!limit || limit <= 0) {
+    return null;
+  }
+
+  const { count, error } = await ctx.admin
+    .from(resource)
+    .select("*", { count: "exact", head: true })
+    .eq("tenant_id", ctx.tenantId);
+
+  if (error) {
+    return fail("Unable to validate tenant limits.", 500, "tenant_limit_check_error", error.message);
+  }
+
+  if ((count ?? 0) >= limit) {
+    return fail(
+      `Plan limit reached for ${resource}. Current plan allows ${limit}.`,
+      403,
+      "tenant_plan_limit_reached",
+      { resource, limit, current: count ?? 0, plan: ctx.tenant.plan },
+    );
+  }
+
+  return null;
+}
+
+async function recordLoginAttempt(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  payload: {
+    tenantId?: string | null;
+    email: string;
+    ipAddress: string;
+    succeeded: boolean;
+    reason?: string;
+  },
+) {
+  await admin.from("login_attempts").insert({
+    tenant_id: payload.tenantId ?? null,
+    email: payload.email,
+    ip_address: payload.ipAddress,
+    succeeded: payload.succeeded,
+    reason: payload.reason ?? null,
+    attempted_at: nowIso(),
+  });
 }
 
 async function listTable(
@@ -333,7 +516,7 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
     return null;
   }
 
-  const allowAnonymous = ["signup", "login", "forgot-password", "reset-password"].includes(sub ?? "");
+  const allowAnonymous = ["signup", "login", "forgot-password", "reset-password", "accept-invite"].includes(sub ?? "");
   const built = await buildContext(request, { allowAnonymous });
   if ("error" in built) {
     return built.error;
@@ -438,8 +621,35 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
       return fail("Invalid login payload.", 400, "validation_error", payload.error.flatten());
     }
 
+    const ipAddress = (request.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+    const rateWindowStart = new Date(Date.now() - 15 * 60_000).toISOString();
+    const { data: recentAttempts } = await ctx.admin
+      .from("login_attempts")
+      .select("id")
+      .eq("email", payload.data.email)
+      .eq("succeeded", false)
+      .gte("attempted_at", rateWindowStart)
+      .order("attempted_at", { ascending: false })
+      .limit(6);
+
+    if ((recentAttempts?.length ?? 0) >= 5) {
+      await recordLoginAttempt(ctx.admin, {
+        email: payload.data.email,
+        ipAddress,
+        succeeded: false,
+        reason: "rate_limited",
+      });
+      return fail("Too many failed login attempts. Please retry in 15 minutes.", 429, "login_rate_limited");
+    }
+
     const { data, error } = await ctx.server.auth.signInWithPassword(payload.data);
     if (error) {
+      await recordLoginAttempt(ctx.admin, {
+        email: payload.data.email,
+        ipAddress,
+        succeeded: false,
+        reason: "invalid_credentials",
+      });
       return fail("Invalid login credentials.", 401, "login_failed", error.message);
     }
 
@@ -448,6 +658,30 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
       .select("tenant_id, role, full_name")
       .eq("id", data.user.id)
       .maybeSingle();
+
+    await recordLoginAttempt(ctx.admin, {
+      tenantId: profile?.tenant_id ?? null,
+      email: payload.data.email,
+      ipAddress,
+      succeeded: true,
+      reason: "success",
+    });
+
+    const sessionTokenHash = crypto
+      .createHash("sha256")
+      .update(`${data.user.id}:${Date.now()}:${Math.random().toString(16).slice(2)}`)
+      .digest("hex");
+
+    if (profile?.tenant_id ?? ctx.tenantId) {
+      await ctx.admin.from("device_sessions").insert({
+        tenant_id: profile?.tenant_id ?? ctx.tenantId,
+        user_id: data.user.id,
+        session_token_hash: sessionTokenHash,
+        user_agent: request.headers.get("user-agent") ?? null,
+        ip_address: ipAddress,
+        last_seen_at: nowIso(),
+      });
+    }
 
     return ok({
       user: {
@@ -459,6 +693,14 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
   }
 
   if (sub === "logout" && method === "POST") {
+    const { error } = await ctx.server.auth.signOut();
+    if (error) {
+      return fail("Failed to logout.", 500, "logout_error", error.message);
+    }
+    return ok({ signed_out: true });
+  }
+
+  if (sub === "logout" && method === "GET") {
     const { error } = await ctx.server.auth.signOut();
     if (error) {
       return fail("Failed to logout.", 500, "logout_error", error.message);
@@ -513,6 +755,84 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
     return ok({ reset: true });
   }
 
+  if (sub === "accept-invite" && method === "POST") {
+    const schema = z.object({
+      token: z.string().min(12),
+      email: z.string().email(),
+      password: z.string().min(8),
+      full_name: z.string().min(1).max(120).optional(),
+    });
+    const parsed = schema.safeParse(await parseBody(request, {}));
+    if (!parsed.success) {
+      return fail("Invalid invite acceptance payload.", 400, "validation_error", parsed.error.flatten());
+    }
+
+    const { data: invite, error: inviteError } = await ctx.admin
+      .from("user_invites")
+      .select("*")
+      .eq("invite_token", parsed.data.token)
+      .eq("email", parsed.data.email)
+      .maybeSingle();
+
+    if (inviteError) {
+      return fail("Failed to validate invite.", 500, "invite_lookup_error", inviteError.message);
+    }
+    if (!invite) {
+      return fail("Invite not found.", 404, "invite_not_found");
+    }
+    if (invite.accepted_at) {
+      return fail("Invite already accepted.", 409, "invite_already_used");
+    }
+    if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+      return fail("Invite has expired.", 410, "invite_expired");
+    }
+
+    const { data: created, error: createError } = await ctx.admin.auth.admin.createUser({
+      email: parsed.data.email,
+      password: parsed.data.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: parsed.data.full_name ?? null,
+      },
+    });
+
+    if (createError || !created.user) {
+      return fail("Unable to create invited user.", 500, "invite_user_create_error", createError?.message);
+    }
+
+    const { error: profileError } = await ctx.admin.from("user_profiles").upsert({
+      id: created.user.id,
+      tenant_id: invite.tenant_id,
+      full_name: parsed.data.full_name ?? null,
+      role: invite.role,
+      is_active: true,
+    });
+
+    if (profileError) {
+      return fail("Invite accepted but profile setup failed.", 500, "invite_profile_error", profileError.message);
+    }
+
+    await ctx.admin
+      .from("user_invites")
+      .update({ accepted_at: nowIso() })
+      .eq("id", invite.id);
+
+    await ctx.server.auth.signInWithPassword({
+      email: parsed.data.email,
+      password: parsed.data.password,
+    });
+
+    return ok(
+      {
+        user_id: created.user.id,
+        tenant_id: invite.tenant_id,
+        role: invite.role,
+      },
+      201,
+      "Invite accepted successfully.",
+    );
+  }
+
   if (sub === "mfa" && path[2] === "enroll" && method === "POST") {
     const secret = crypto.randomBytes(16).toString("hex");
     return ok({
@@ -544,6 +864,33 @@ async function handleAuth(path: string[], method: string, request: NextRequest) 
       user,
       profile,
     });
+  }
+
+  if (sub === "device-sessions" && method === "GET") {
+    return listTable(ctx, "device_sessions", request, {
+      extraFilters: [{ column: "user_id", value: ctx.userId ?? "" }],
+      orderBy: "last_seen_at",
+    });
+  }
+
+  if (sub === "device-sessions" && maybeId && method === "DELETE") {
+    return updateById(ctx, "device_sessions", maybeId, {
+      revoked_at: nowIso(),
+    });
+  }
+
+  if (sub === "sessions" && path[2] === "revoke-all" && method === "POST") {
+    const { error } = await ctx.admin
+      .from("device_sessions")
+      .update({ revoked_at: nowIso() })
+      .eq("tenant_id", ctx.tenantId)
+      .eq("user_id", ctx.userId);
+
+    if (error) {
+      return fail("Failed to revoke active sessions.", 500, "session_revoke_error", error.message);
+    }
+
+    return ok({ revoked: true });
   }
 
   if (sub === "api-keys" && method === "GET") {
@@ -615,6 +962,111 @@ async function handleSubscribers(path: string[], method: string, request: NextRe
   const subscriberId = path[1];
   const action = path[2];
 
+  if (subscriberId === "bulk-import" && method === "POST") {
+    const schema = z.object({
+      csv: z.string().optional(),
+      records: z
+        .array(
+          z.object({
+            imsi: z.string().min(10),
+            msisdn: z.string().optional(),
+            status: z.enum(["active", "suspended", "terminated"]).default("active"),
+            plan: z.string().default("starter"),
+            data_limit_gb: z.number().nonnegative().default(10),
+            roaming_enabled: z.boolean().default(false),
+          }),
+        )
+        .optional(),
+    });
+
+    const parsed = schema.safeParse(await parseBody(request, {}));
+    if (!parsed.success) {
+      return fail("Invalid bulk import payload.", 400, "validation_error", parsed.error.flatten());
+    }
+
+    let rows = parsed.data.records ?? [];
+    if (!rows.length && parsed.data.csv) {
+      const lines = parsed.data.csv
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length > 1) {
+        const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+        const idx = (name: string) => headers.indexOf(name);
+
+        rows = lines.slice(1).map((line) => {
+          const cols = line.split(",").map((c) => c.trim());
+          const roamingRaw = cols[idx("roaming_enabled")]?.toLowerCase();
+          const dataLimitRaw = cols[idx("data_limit_gb")];
+          return {
+            imsi: cols[idx("imsi")] ?? "",
+            msisdn: cols[idx("msisdn")] || null,
+            status: (cols[idx("status")] as "active" | "suspended" | "terminated") || "active",
+            plan: cols[idx("plan")] || "starter",
+            data_limit_gb: dataLimitRaw ? Number(dataLimitRaw) : 10,
+            roaming_enabled: roamingRaw === "true" || roamingRaw === "1" || roamingRaw === "yes",
+          };
+        });
+      }
+    }
+
+    if (!rows.length) {
+      return fail("No subscriber rows provided for import.", 400, "empty_import");
+    }
+
+    const normalizedRows = rows
+      .filter((row) => row.imsi && row.imsi.length >= 10)
+      .map((row) => ({
+        tenant_id: ctx.tenantId,
+        imsi: row.imsi,
+        msisdn: row.msisdn ?? null,
+        status: row.status ?? "active",
+        plan: row.plan ?? "starter",
+        data_limit_gb: row.data_limit_gb ?? 10,
+        roaming_enabled: row.roaming_enabled ?? false,
+      }));
+
+    const { data, error } = await ctx.admin
+      .from("subscribers")
+      .upsert(normalizedRows, { onConflict: "imsi" })
+      .select("id,imsi");
+
+    if (error) {
+      return fail("Bulk import failed.", 500, "bulk_import_error", error.message);
+    }
+
+    return ok(
+      {
+        imported: data?.length ?? 0,
+        total_rows: rows.length,
+      },
+      201,
+      "Bulk import completed.",
+    );
+  }
+
+  if (subscriberId === "export" && method === "GET") {
+    const { data, error } = await ctx.admin
+      .from("subscribers")
+      .select("id,imsi,msisdn,status,plan,data_limit_gb,roaming_enabled,created_at")
+      .eq("tenant_id", ctx.tenantId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return fail("Failed to export subscribers.", 500, "subscriber_export_error", error.message);
+    }
+
+    const csv = toCsv((data ?? []) as Array<Record<string, unknown>>);
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename=\"subscribers-export-${Date.now()}.csv\"`,
+      },
+    });
+  }
+
   if (!subscriberId) {
     if (method === "GET") {
       return listTable(ctx, "subscribers", request, {
@@ -624,6 +1076,9 @@ async function handleSubscribers(path: string[], method: string, request: NextRe
     }
 
     if (method === "POST") {
+      const limitError = await enforceTenantPlanLimit(ctx, "subscribers");
+      if (limitError) return limitError;
+
       const schema = z.object({
         imsi: z.string().min(10),
         msisdn: z.string().optional(),
@@ -685,6 +1140,90 @@ async function handleSubscribers(path: string[], method: string, request: NextRe
     return ok({
       credit_balance: creditsRes.data,
       cdr_records: cdrRes.data ?? [],
+    });
+  }
+
+  if (subscriberId && action === "roaming") {
+    if (method === "GET") {
+      const { data, error } = await ctx.admin
+        .from("roaming_profiles")
+        .select("*")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("subscriber_id", subscriberId)
+        .maybeSingle();
+
+      if (error) {
+        return fail("Failed to fetch roaming profile.", 500, "roaming_fetch_error", error.message);
+      }
+
+      return ok(data);
+    }
+
+    if (method === "PUT") {
+      const schema = z.object({
+        allowed_countries: z.array(z.string()).default([]),
+        data_limit_mb: z.number().int().nonnegative().optional(),
+        voice_limit_minutes: z.number().int().nonnegative().optional(),
+      });
+      const parsed = schema.safeParse(await parseBody(request, {}));
+      if (!parsed.success) {
+        return fail("Invalid roaming payload.", 400, "validation_error", parsed.error.flatten());
+      }
+
+      const { data, error } = await ctx.admin
+        .from("roaming_profiles")
+        .upsert({
+          tenant_id: ctx.tenantId,
+          subscriber_id: subscriberId,
+          ...parsed.data,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        return fail("Failed to update roaming profile.", 500, "roaming_update_error", error.message);
+      }
+
+      return ok(data);
+    }
+  }
+
+  if (subscriberId && action === "usage" && method === "GET") {
+    const { data, error } = await ctx.admin
+      .from("cdr_records")
+      .select("start_time,duration_seconds,bytes_uplink,bytes_downlink,charge_amount,service_type,roaming_indicator")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("subscriber_id", subscriberId)
+      .order("start_time", { ascending: false })
+      .limit(365);
+
+    if (error) {
+      return fail("Failed to fetch subscriber usage.", 500, "subscriber_usage_error", error.message);
+    }
+
+    const timeline = new Map<string, { date: string; bytes: number; duration_seconds: number; charge: number; sessions: number }>();
+    (data ?? []).forEach((row: any) => {
+      const date = String(row.start_time ?? nowIso()).slice(0, 10);
+      const current = timeline.get(date) ?? { date, bytes: 0, duration_seconds: 0, charge: 0, sessions: 0 };
+      current.bytes += Number(row.bytes_uplink ?? 0) + Number(row.bytes_downlink ?? 0);
+      current.duration_seconds += Number(row.duration_seconds ?? 0);
+      current.charge += Number(row.charge_amount ?? 0);
+      current.sessions += 1;
+      timeline.set(date, current);
+    });
+
+    const points = Array.from(timeline.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const totalBytes = points.reduce((sum, item) => sum + item.bytes, 0);
+    const totalCharge = points.reduce((sum, item) => sum + item.charge, 0);
+    const totalSessions = points.reduce((sum, item) => sum + item.sessions, 0);
+
+    return ok({
+      summary: {
+        total_bytes: totalBytes,
+        total_charge: totalCharge,
+        total_sessions: totalSessions,
+      },
+      timeline: points,
     });
   }
 
@@ -782,6 +1321,22 @@ async function handleNetworkFunctions(path: string[], method: string, request: N
   const id = path[1];
   const action = path[2];
 
+  if (id === "types" && method === "GET") {
+    return ok([
+      { code: "AMF", generation: "5G", description: "Access and Mobility Management Function" },
+      { code: "SMF", generation: "5G", description: "Session Management Function" },
+      { code: "UPF", generation: "5G", description: "User Plane Function" },
+      { code: "PCF", generation: "5G", description: "Policy Control Function" },
+      { code: "AUSF", generation: "5G", description: "Authentication Server Function" },
+      { code: "UDM", generation: "5G", description: "Unified Data Management" },
+      { code: "MME", generation: "4G", description: "Mobility Management Entity" },
+      { code: "SGW", generation: "4G", description: "Serving Gateway" },
+      { code: "PGW", generation: "4G", description: "PDN Gateway" },
+      { code: "HSS", generation: "4G", description: "Home Subscriber Server" },
+      { code: "PCRF", generation: "4G", description: "Policy and Charging Rules Function" },
+    ]);
+  }
+
   if (!id) {
     if (method === "GET") {
       return listTable(ctx, "network_functions", request, {
@@ -794,12 +1349,18 @@ async function handleNetworkFunctions(path: string[], method: string, request: N
     }
 
     if (method === "POST") {
+      const limitError = await enforceTenantPlanLimit(ctx, "network_functions");
+      if (limitError) return limitError;
+
       const schema = z.object({
         name: z.string().min(2),
         nf_type: z.string().min(2),
         generation: z.enum(["5G", "4G"]),
         version: z.string().optional(),
         region_id: z.string().uuid().optional(),
+        helm_chart_url: z.string().url().optional(),
+        container_image: z.string().optional(),
+        service_mesh_config: z.record(z.string(), z.any()).default({}),
         config: z.record(z.string(), z.any()).default({}),
         resource_limits: z.record(z.string(), z.any()).default({ replicas: 1, cpu: "500m", memory: "1Gi" }),
       });
@@ -904,6 +1465,93 @@ async function handleNetworkFunctions(path: string[], method: string, request: N
     });
   }
 
+  if (id && action === "config") {
+    if (method === "GET") {
+      const { data, error } = await ctx.admin
+        .from("network_functions")
+        .select("id,name,config,service_mesh_config,resource_limits,helm_chart_url,container_image,updated_at")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("id", id)
+        .maybeSingle();
+
+      if (error) {
+        return fail("Failed to fetch network function config.", 500, "nf_config_fetch_error", error.message);
+      }
+      if (!data) {
+        return fail("Network function not found.", 404, "not_found");
+      }
+      return ok(data);
+    }
+
+    if (method === "PUT") {
+      const schema = z.object({
+        config: z.record(z.string(), z.any()).optional(),
+        service_mesh_config: z.record(z.string(), z.any()).optional(),
+        resource_limits: z.record(z.string(), z.any()).optional(),
+        helm_chart_url: z.string().url().optional(),
+        container_image: z.string().optional(),
+      });
+      const parsed = schema.safeParse(await parseBody(request, {}));
+      if (!parsed.success) {
+        return fail("Invalid network function config payload.", 400, "validation_error", parsed.error.flatten());
+      }
+
+      await ctx.admin.from("orchestration_jobs").insert({
+        tenant_id: ctx.tenantId,
+        job_type: "config_update",
+        target_type: "network_function",
+        target_id: id,
+        payload: parsed.data,
+        status: "queued",
+      });
+
+      return updateById(ctx, "network_functions", id, {
+        ...parsed.data,
+        status: "deploying",
+        updated_at: nowIso(),
+      });
+    }
+  }
+
+  if (id && action === "rolling-update" && method === "POST") {
+    const schema = z.object({
+      version: z.string().optional(),
+      image: z.string().optional(),
+      max_unavailable: z.number().int().min(0).max(10).default(1),
+    });
+    const parsed = schema.safeParse(await parseBody(request, {}));
+    if (!parsed.success) {
+      return fail("Invalid rolling update payload.", 400, "validation_error", parsed.error.flatten());
+    }
+
+    const { data: job, error: jobError } = await ctx.admin
+      .from("orchestration_jobs")
+      .insert({
+        tenant_id: ctx.tenantId,
+        job_type: "rolling_update",
+        target_type: "network_function",
+        target_id: id,
+        payload: parsed.data,
+        status: "queued",
+      })
+      .select("*")
+      .single();
+
+    if (jobError) {
+      return fail("Failed to create rolling update job.", 500, "rolling_update_error", jobError.message);
+    }
+
+    const patch: Record<string, unknown> = {
+      status: "deploying",
+      updated_at: nowIso(),
+    };
+    if (parsed.data.version) patch.version = parsed.data.version;
+    if (parsed.data.image) patch.container_image = parsed.data.image;
+    await updateById(ctx, "network_functions", id, patch);
+
+    return ok(job, 201);
+  }
+
   if (id && action === "health" && method === "GET") {
     const [nfRes, alarmRes] = await Promise.all([
       ctx.admin
@@ -983,6 +1631,9 @@ async function handleSlices(path: string[], method: string, request: NextRequest
         bandwidth_mbps: z.number().int().min(1).default(100),
         latency_target_ms: z.number().int().min(1).default(20),
         max_subscribers: z.number().int().min(1).default(1000),
+        sni_tag: z.string().optional(),
+        s_nssai: z.string().optional(),
+        plmn_id: z.string().optional(),
       });
       const parsed = schema.safeParse(await parseBody(request, {}));
       if (!parsed.success) {
@@ -1038,6 +1689,99 @@ async function handleSlices(path: string[], method: string, request: NextRequest
       ],
       orderBy: "recorded_at",
     });
+  }
+
+  if (id && action === "utilization" && method === "GET") {
+    const { data, error } = await ctx.admin
+      .from("performance_metrics")
+      .select("metric_name,metric_value,unit,recorded_at,labels")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("entity_type", "slice")
+      .eq("entity_id", id)
+      .order("recorded_at", { ascending: false })
+      .limit(500);
+
+    if (error) {
+      return fail("Failed to fetch slice utilization.", 500, "slice_utilization_error", error.message);
+    }
+
+    const latest = new Map<string, any>();
+    (data ?? []).forEach((row: any) => {
+      if (!latest.has(row.metric_name)) {
+        latest.set(row.metric_name, row);
+      }
+    });
+
+    return ok({
+      latest: Array.from(latest.values()),
+      timeline: data ?? [],
+    });
+  }
+
+  if (id && action === "sla" && method === "GET") {
+    const { data, error } = await ctx.admin
+      .from("sla_agreements")
+      .select("*")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("slice_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return fail("Failed to fetch slice SLA.", 500, "slice_sla_error", error.message);
+    }
+
+    return ok(
+      data ?? {
+        slice_id: id,
+        name: "Default SLA",
+        latency_ms_target: 20,
+        availability_pct_target: 99.9,
+        throughput_mbps_target: 100,
+        is_active: true,
+      },
+    );
+  }
+
+  if (id && action === "clone" && method === "POST") {
+    const schema = z.object({
+      name: z.string().min(2).optional(),
+    });
+    const parsed = schema.safeParse(await parseBody(request, {}));
+    if (!parsed.success) {
+      return fail("Invalid slice clone payload.", 400, "validation_error", parsed.error.flatten());
+    }
+
+    const { data: source, error: sourceError } = await ctx.admin
+      .from("network_slices")
+      .select("*")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (sourceError) {
+      return fail("Failed to load source slice for clone.", 500, "slice_clone_source_error", sourceError.message);
+    }
+    if (!source) {
+      return fail("Source slice not found.", 404, "not_found");
+    }
+
+    const clonePayload = {
+      name: parsed.data.name ?? `${source.name} (Clone)`,
+      slice_type: source.slice_type,
+      template_id: source.template_id,
+      qos_profile: source.qos_profile ?? {},
+      bandwidth_mbps: source.bandwidth_mbps,
+      latency_target_ms: source.latency_target_ms,
+      max_subscribers: source.max_subscribers,
+      sni_tag: source.sni_tag,
+      s_nssai: source.s_nssai,
+      plmn_id: source.plmn_id,
+      status: "pending",
+    };
+
+    return insertOne(ctx, "network_slices", clonePayload);
   }
 
   return null;
